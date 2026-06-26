@@ -960,8 +960,15 @@ async function sourceBybitLiquidations(cfg) {
     `https://api.bybit.com/v5/market/liquidation?category=linear&symbol=${cfg.binance}&limit=200`,
     7000
   ).catch(() => null);
+  if (!d) return null;
   const list = d?.result?.list || [];
-  if (!list.length) return null;
+  // Bybit returns empty list saat tidak ada liquidation event — tetap return data bermakna
+  if (!list.length) return {
+    longLiqCount: 0, shortLiqCount: 0,
+    longLiqValueM: 0, shortLiqValueM: 0,
+    momentum: 'NEUTRAL', recentBurst: false, burstDirection: null,
+    washoutSignal: 'NONE', source: 'Bybit linear — no recent events',
+  };
 
   const now = Date.now();
   const recent30m = list.filter(l => now - parseInt(l.updatedTime || l.time || 0) < 30 * 60 * 1000);
@@ -1034,40 +1041,61 @@ async function sourceFuturesBasis(cfg) {
   };
 }
 
-// ── CoinMetrics Extended — CapNuvt, NVT, SOPR proxy (free community API) ─────
+// ── CoinMetrics Extended — Exchange Flow + Active Addresses (free community API) ─
+// NVTAdj90/SoprFree/CapNuvtUsd dikunci di plan berbayar CoinMetrics.
+// Pakai metric free yang tersedia: FlowInExUSD, FlowOutExUSD, AdrActCnt.
+// Net flow negatif = lebih banyak BTC keluar exchange = akumulasi (bullish).
+// Active addresses naik = network growing (bullish on-chain demand).
 async function sourceCoinMetricsExtended(cfg) {
   const url = 'https://community-api.coinmetrics.io/v4/timeseries/asset-metrics'
     + `?assets=${cfg.cm}`
-    + '&metrics=NVTAdj90,SoprFree,CapNuvtUsd'
-    + '&page_size=3&pretty=false';
+    + '&metrics=FlowInExUSD,FlowOutExUSD,AdrActCnt'
+    + '&page_size=7&pretty=false';
   const d = await fetchJSON(url, 8000).catch(() => null);
   if (!d?.data?.length) return null;
 
-  const rows = d.data.filter(r => r.NVTAdj90 != null || r.SoprFree != null || r.CapNuvtUsd != null);
+  const rows = d.data.filter(r => r.FlowInExUSD != null || r.FlowOutExUSD != null);
   if (!rows.length) return null;
   const latest = rows[rows.length - 1];
 
-  const nvt  = latest.NVTAdj90 ? +parseFloat(latest.NVTAdj90).toFixed(2) : null;
-  const sopr = latest.SoprFree  ? +parseFloat(latest.SoprFree).toFixed(4)  : null;
-  const nuvt = latest.CapNuvtUsd ? +parseFloat(latest.CapNuvtUsd).toFixed(0) : null;
+  const flowIn  = latest.FlowInExUSD  ? +parseFloat(latest.FlowInExUSD).toFixed(0)  : null;
+  const flowOut = latest.FlowOutExUSD ? +parseFloat(latest.FlowOutExUSD).toFixed(0) : null;
+  const adrAct  = latest.AdrActCnt   ? +parseInt(latest.AdrActCnt)                  : null;
 
-  let nvtSignal = null;
-  if (nvt != null) {
-    nvtSignal = nvt > 150 ? 'BUBBLE_ZONE'
-      : nvt > 90  ? 'OVERVALUED'
-      : nvt > 45  ? 'FAIR_VALUE'
-      : 'UNDERVALUED';
+  // Net flow: negatif = lebih banyak keluar exchange = akumulasi (bullish)
+  const netFlow = (flowIn != null && flowOut != null) ? flowOut - flowIn : null;
+  const netFlowM = netFlow != null ? +(netFlow / 1e6).toFixed(1) : null;
+
+  // 7-hari context: trend active addresses
+  let adrTrend = null;
+  if (rows.length >= 4 && adrAct != null) {
+    const prev = rows.slice(-4, -1).map(r => parseInt(r.AdrActCnt || 0)).filter(v => v > 0);
+    if (prev.length) {
+      const prevAvg = prev.reduce((a, b) => a + b, 0) / prev.length;
+      adrTrend = adrAct > prevAvg * 1.05 ? 'RISING' : adrAct < prevAvg * 0.95 ? 'FALLING' : 'STABLE';
+    }
   }
 
-  let soprSignal = null;
-  if (sopr != null) {
-    soprSignal = sopr > 1.05 ? 'PROFIT_TAKING'    // holder jual untung — distribusi
-      : sopr > 1.0  ? 'SLIGHT_PROFIT'
-      : sopr > 0.95 ? 'SLIGHT_LOSS'
-      : 'CAPITULATION';                             // holder jual rugi — akumulasi zone
+  let exchangeFlowSignal = 'NEUTRAL';
+  if (netFlowM != null) {
+    // Net positif besar = banyak masuk exchange = tekanan jual (bearish)
+    // Net negatif besar = banyak keluar exchange = akumulasi (bullish)
+    if (netFlowM < -100)       exchangeFlowSignal = 'ACCUMULATION';   // banyak tarik dari exchange
+    else if (netFlowM < -30)   exchangeFlowSignal = 'SLIGHT_ACCUM';
+    else if (netFlowM > 100)   exchangeFlowSignal = 'DISTRIBUTION';   // banyak deposit ke exchange
+    else if (netFlowM > 30)    exchangeFlowSignal = 'SLIGHT_DISTRIB';
   }
 
-  return { nvt, nvtSignal, sopr, soprSignal, nuvtUsd: nuvt, date: latest.time };
+  return {
+    flowInExUsd:  flowIn,
+    flowOutExUsd: flowOut,
+    netFlowM,
+    exchangeFlowSignal,
+    activeAddresses: adrAct,
+    adrTrend,
+    date: latest.time?.slice(0, 10) || null,
+    source: 'CoinMetrics community',
+  };
 }
 
 // ── Multi-exchange funding (Bybit + OKX, free no key) ───────────────────────
@@ -1329,11 +1357,26 @@ async function sourceOkxLiquidations(cfg) {
 }
 
 // ── §4.1 Coinbase Premium — institusi & retail US (TANPA KEY) ────────────────
-// Premium dihitung di handler (butuh harga Binance dari snapshot).
+// Primary: Coinbase Exchange API. Fallback: Coinbase Advanced Trade (CDP) public.
 async function sourceCoinbaseTicker(cfg) {
-  const d = await fetchJSON(`https://api.exchange.coinbase.com/products/${cfg.coinbase}/ticker`, 6000);
-  const price = parseFloat(d?.price);
-  return price > 0 ? { price } : null;
+  // Primary: exchange.coinbase.com
+  try {
+    const d = await fetchJSON(`https://api.exchange.coinbase.com/products/${cfg.coinbase}/ticker`, 6000);
+    const price = parseFloat(d?.price);
+    if (price > 0) return { price };
+  } catch (_) {}
+  // Fallback: api.coinbase.com Advanced Trade best_bid_ask (public, no auth)
+  try {
+    const d = await fetchJSON(
+      `https://api.coinbase.com/api/v3/brokerage/market/best_bid_ask?product_ids=${cfg.coinbase}`,
+      6000
+    );
+    const entry = d?.pricebooks?.[0];
+    const bid = parseFloat(entry?.bids?.[0]?.price);
+    const ask = parseFloat(entry?.asks?.[0]?.price);
+    if (bid > 0 && ask > 0) return { price: (bid + ask) / 2 };
+  } catch (_) {}
+  return null;
 }
 
 // ── §4.2 Kimchi Premium — retail Asia (TANPA KEY) ────────────────────────────
@@ -1392,10 +1435,23 @@ async function sourceCmeGap(cfg) {
 
 // ── §5.3 Polymarket — prediction market odds (TANPA KEY, eksperimental) ──────
 async function sourcePolymarket(cfg) {
-  const d = await fetchJSON(
-    'https://gamma-api.polymarket.com/markets?closed=false&limit=40&order=volume24hr&ascending=false',
-    7000
-  );
+  // Primary: Gamma API. Fallback: CLOB API (struktur berbeda tapi sama-sama public).
+  let d = null;
+  try {
+    d = await fetchJSON(
+      'https://gamma-api.polymarket.com/markets?closed=false&limit=40&order=volume24hr&ascending=false',
+      7000
+    );
+  } catch (_) {}
+  if (!Array.isArray(d)) {
+    try {
+      const clob = await fetchJSON(
+        'https://clob.polymarket.com/markets?closed=false&limit=40',
+        7000
+      );
+      d = Array.isArray(clob?.data) ? clob.data : null;
+    } catch (_) {}
+  }
   if (!Array.isArray(d)) return null;
   const parse = (v) => { try { return typeof v === 'string' ? JSON.parse(v) : v; } catch (_) { return null; } };
   const btcMarkets = d
@@ -1899,7 +1955,7 @@ const SOURCES = [
   ['cvd',              sourceCVD,                  true],   // v6: Binance futures order flow
   ['options',          sourceDeribitOptions,       true,  'hasOptions'],  // PCR/max pain — BTC/ETH
   ['onChain',          sourceCoinMetrics,          true],   // MVRV (coverage sol/xrp terbatas — biarkan null)
-  ['onChainExt',       sourceCoinMetricsExtended,  true],   // v7: NVT, SOPR, CapNuvt
+  ['onChainExt',       sourceCoinMetricsExtended,  true],   // v7: exchange flow + active addresses
   ['stablecoins',      sourceStablecoins,          true],   // v6: dry powder
   ['multiFunding',     sourceMultiFunding,         true],   // v6: cross-exchange funding
   ['okxFlow',          sourceOkxFlow,              true],   // v7: OKX top trader L/S

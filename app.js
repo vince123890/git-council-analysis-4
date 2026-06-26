@@ -544,11 +544,11 @@ ${extraOnchainLines.join('\n')}` : '';
 ═══ INSTITUTIONAL & CROSS-EXCHANGE FLOW (v7 — bandarmologi inti) ═══
 ${instLines.join('\n')}` : '';
 
-  // ── v7: On-chain extended (NVT, SOPR) ────────────────────────────────────
+  // ── v7: On-chain extended (Exchange Flow + Active Addresses) ──────────────
   const onChainExtBlock = oe ? `
 ═══ ON-CHAIN EXTENDED (CoinMetrics Community) ═══
-• NVT Signal (90d): ${oe.nvt != null ? num(oe.nvt, 1) + ' → ' + (oe.nvtSignal || 'N/A') : 'N/A'} ${oe.nvtSignal === 'BUBBLE_ZONE' ? '(valuasi gelembung, hati-hati)' : oe.nvtSignal === 'UNDERVALUED' ? '(undervalued, zona beli fundamental)' : ''}
-• SOPR (Spent Output): ${oe.sopr != null ? num(oe.sopr, 4) + ' → ' + (oe.soprSignal || 'N/A') : 'N/A'} ${oe.soprSignal === 'PROFIT_TAKING' ? '(holder jual untung — distribusi)' : oe.soprSignal === 'CAPITULATION' ? '(holder jual rugi — zona akumulasi!)' : ''}` : '';
+• Exchange Net Flow: ${oe.netFlowM != null ? (oe.netFlowM >= 0 ? '+' : '') + sf(oe.netFlowM, 0) + 'M USD' : 'N/A'} → ${oe.exchangeFlowSignal || 'N/A'} ${oe.exchangeFlowSignal === 'ACCUMULATION' ? '(banyak BTC keluar exchange — akumulasi, bullish)' : oe.exchangeFlowSignal === 'DISTRIBUTION' ? '(banyak BTC masuk exchange — tekanan jual, bearish)' : ''}
+• Active Addresses: ${oe.activeAddresses != null ? Number(oe.activeAddresses).toLocaleString() : 'N/A'}${oe.adrTrend ? ' → ' + oe.adrTrend + (oe.adrTrend === 'RISING' ? ' (demand jaringan naik, bullish)' : oe.adrTrend === 'FALLING' ? ' (aktivitas melemah)' : '') : ''}` : '';
 
   return `═══ HARGA & MARKET — ${coinName} (${sym}) ═══
 • ${sym}/USDT spot: $${num(s.ticker?.price, 2)}
@@ -1489,6 +1489,16 @@ function toggleSettings() {
   render();
 }
 
+function openSettingsDataKeys() {
+  state.showSettings = true;
+  state.testResult = null;
+  render();
+  setTimeout(() => {
+    const el = document.getElementById('data-source-keys-section');
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 80);
+}
+
 function saveApiKey() {
   const input = document.getElementById('api-key-input');
   if (!input) return;
@@ -1832,17 +1842,17 @@ function viewSettings() {
     </div>
 
     <!-- v8: FREE KEY data sources tambahan (semua opsional & gratis) -->
-    <div class="mt-6 pt-5 border-t border-zinc-800">
+    <div id="data-source-keys-section" class="mt-6 pt-5 border-t border-zinc-800">
       <label class="block text-[10px] uppercase tracking-[0.15em] text-zinc-500 mb-1">
         Data Source Keys <span class="text-zinc-600 normal-case tracking-normal">(v8 — semua GRATIS &amp; opsional, daftar sendiri, key disimpan di browser)</span>
       </label>
       <p class="text-[11px] text-zinc-600 sans mb-3">Tanpa key ini dashboard tetap jalan penuh — key hanya menambah sinyal: ETF flow institusi (SoSoValue), VIX/yield makro (FRED), berita dengan voting bullish/bearish (CryptoPanic), NUPL on-chain (bitcoin-data.com).</p>
       <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
         ${[
-          { name: 'soso',        label: 'SoSoValue (ETF flows)',        url: 'https://sosovalue.com',                 urlLabel: 'sosovalue.com → API key',        hint: 'Net inflow/outflow harian ETF spot BTC — sinyal institusi terkuat' },
-          { name: 'fred',        label: 'FRED (makro resmi)',           url: 'https://fred.stlouisfed.org/docs/api/api_key.html', urlLabel: 'fred.stlouisfed.org', hint: 'VIX, 10Y yield, DXY broad — gratis permanen dari The Fed' },
-          { name: 'cryptopanic', label: 'CryptoPanic (news + votes)',   url: 'https://cryptopanic.com/developers/api/', urlLabel: 'cryptopanic.com/developers',   hint: 'Berita JSON + voting bullish/bearish per berita (ganti RSS)' },
-          { name: 'btcdata',     label: 'bitcoin-data.com (NUPL)',      url: 'https://bitcoin-data.com',              urlLabel: 'bitcoin-data.com',               hint: 'NUPL cycle-stage. Rate limit ketat → di-cache 24 jam otomatis' },
+          { name: 'soso',        label: 'SoSoValue (ETF flows)',        url: 'https://sosovalue.com/api-docs',        urlLabel: 'Daftar di sosovalue.com',        hint: 'Net inflow/outflow harian ETF spot BTC — sinyal institusi terkuat', steps: 'Buka link → Sign up gratis → My Account → API Key → Copy' },
+          { name: 'fred',        label: 'FRED (makro resmi)',           url: 'https://fred.stlouisfed.org/docs/api/api_key.html', urlLabel: 'Daftar di fred.stlouisfed.org', hint: 'VIX, 10Y yield, DXY broad — dari The Fed, gratis permanen', steps: 'Buka link → Request API Key → Isi email → Cek inbox → Copy key' },
+          { name: 'cryptopanic', label: 'CryptoPanic (news + votes)',   url: 'https://cryptopanic.com/developers/api/', urlLabel: 'Daftar di cryptopanic.com',       hint: 'Berita crypto + voting bullish/bearish per artikel', steps: 'Buka link → Sign up → Dashboard → Auth Token → Copy' },
+          { name: 'btcdata',     label: 'bitcoin-data.com (NUPL)',      url: 'https://bitcoin-data.com',              urlLabel: 'Buka bitcoin-data.com',              hint: 'NUPL cycle-stage indicator. Rate limit ketat → di-cache 24 jam otomatis', steps: 'Saat ini endpoint publik (tanpa key) — kolom ini opsional untuk akses prioritas jika tersedia' },
         ].map(k => `<div class="border border-zinc-800 bg-zinc-950/60 p-3">
           <div class="flex items-center justify-between gap-2 mb-1">
             <span class="text-[11px] text-zinc-300 font-medium">${esc(k.label)}</span>
@@ -1850,10 +1860,12 @@ function viewSettings() {
               ? '<span class="text-[9px] text-emerald-400">● configured</span>'
               : '<span class="text-[9px] text-zinc-600">○ off</span>'}
           </div>
-          <div class="text-[10px] text-zinc-600 sans mb-2">${esc(k.hint)} · <a href="${k.url}" target="_blank" rel="noopener" class="text-blue-400/80 hover:underline">${esc(k.urlLabel)}</a></div>
+          <div class="text-[10px] text-zinc-600 sans mb-1">${esc(k.hint)}</div>
+          <div class="text-[10px] text-blue-400/60 sans mb-2">→ ${esc(k.steps)}</div>
+          <a href="${k.url}" target="_blank" rel="noopener" class="inline-block text-[9px] text-blue-400/80 hover:text-blue-300 border border-blue-500/30 hover:border-blue-400/50 px-2 py-0.5 mb-2 transition-colors">${esc(k.urlLabel)} ↗</a>
           <div class="flex gap-2">
             <input id="datakey-${k.name}" type="password" value="${esc(state.dataKeys[k.name])}"
-              placeholder="API key (opsional)"
+              placeholder="Paste API key di sini"
               class="flex-1 min-w-0 bg-black border border-zinc-700 px-2 py-1.5 text-xs text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-blue-500"
               autocomplete="off" spellcheck="false" />
             <button onclick="window._app.saveDataKey('${k.name}', document.getElementById('datakey-${k.name}').value)"
@@ -2652,59 +2664,64 @@ function viewOnChainCard(snap, analysis) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-//  v7: On-Chain Extended card (NVT, SOPR)
+//  v7: On-Chain Extended card (Exchange Flow + Active Addresses)
 // ─────────────────────────────────────────────────────────────────────────────
 function viewOnChainExtCard(snap) {
   const oe = snap?.onChainExt;
   if (!oe) return '';
 
-  const nvtCfg = {
-    BUBBLE_ZONE:  { c: 'text-red-400',     bg: 'bg-red-500/10',     label: 'BUBBLE ZONE',  icon: '⚠' },
-    OVERVALUED:   { c: 'text-orange-400',  bg: 'bg-orange-500/5',   label: 'OVERVALUED',   icon: '⬆' },
-    FAIR_VALUE:   { c: 'text-blue-400',    bg: 'bg-blue-500/5',     label: 'FAIR VALUE',   icon: '◆' },
-    UNDERVALUED:  { c: 'text-emerald-400', bg: 'bg-emerald-500/5',  label: 'UNDERVALUED',  icon: '⬇' },
+  const flowCfg = {
+    ACCUMULATION:    { c: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/30', label: 'AKUMULASI',   hint: 'BTC banyak keluar exchange — holder menahan, bullish' },
+    SLIGHT_ACCUM:    { c: 'text-blue-400',    bg: 'bg-blue-500/5',     border: 'border-blue-500/20',    label: 'SLIGHT ACCUM', hint: 'Net outflow ringan — sedikit akumulasi' },
+    NEUTRAL:         { c: 'text-zinc-400',    bg: 'bg-zinc-800/30',    border: 'border-zinc-700',       label: 'NEUTRAL',      hint: 'Flow seimbang' },
+    SLIGHT_DISTRIB:  { c: 'text-amber-400',   bg: 'bg-amber-500/5',    border: 'border-amber-500/20',   label: 'SLIGHT SELL',  hint: 'Net inflow ringan — sedikit distribusi' },
+    DISTRIBUTION:    { c: 'text-red-400',     bg: 'bg-red-500/10',     border: 'border-red-500/30',     label: 'DISTRIBUSI',   hint: 'BTC banyak masuk exchange — tekanan jual, bearish' },
   };
-  const soprCfg = {
-    PROFIT_TAKING: { c: 'text-orange-400', label: 'PROFIT TAKING',  hint: 'holder jual untung — distribusi, hati-hati' },
-    SLIGHT_PROFIT: { c: 'text-blue-400',   label: 'SLIGHT PROFIT',  hint: 'holder sedikit untung — normal bull' },
-    SLIGHT_LOSS:   { c: 'text-amber-400',  label: 'SLIGHT LOSS',    hint: 'holder sedikit rugi — waspada' },
-    CAPITULATION:  { c: 'text-emerald-400', label: 'CAPITULATION',  hint: 'holder jual rugi — bottom signal, zona beli!' },
+  const adrCfg = {
+    RISING:  { c: 'text-emerald-400', label: 'RISING',  hint: 'demand jaringan naik' },
+    STABLE:  { c: 'text-blue-400',    label: 'STABLE',  hint: 'aktivitas stabil' },
+    FALLING: { c: 'text-red-400',     label: 'FALLING', hint: 'aktivitas jaringan melemah' },
   };
 
-  const nvt = nvtCfg[oe.nvtSignal] || { c: 'text-zinc-400', bg: 'bg-zinc-800/30', label: oe.nvtSignal || '—', icon: '◆' };
-  const sopr = soprCfg[oe.soprSignal] || { c: 'text-zinc-400', label: oe.soprSignal || '—', hint: '' };
+  const flow = flowCfg[oe.exchangeFlowSignal] || flowCfg.NEUTRAL;
+  const adr  = adrCfg[oe.adrTrend] || { c: 'text-zinc-400', label: oe.adrTrend || '—', hint: '' };
+
+  const fmtM = (v) => v == null ? '—' : (Math.abs(v) >= 1000 ? (v/1000).toFixed(1)+'B' : v.toFixed(0)+'M');
+  const fmtK = (v) => v == null ? '—' : (v >= 1e6 ? (v/1e6).toFixed(2)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'K' : String(v));
 
   return `<div class="col-span-12 md:col-span-6 border border-blue-500/20 bg-zinc-950 p-5">
     <div class="flex items-center justify-between mb-4">
       <div>
         <span class="text-[10px] uppercase tracking-[0.15em] text-blue-300">On-Chain Extended · v7</span>
-        <div class="text-xs text-zinc-500 sans mt-0.5">CoinMetrics Community · NVT Signal + SOPR</div>
+        <div class="text-xs text-zinc-500 sans mt-0.5">CoinMetrics Community · Exchange Flow + Active Addresses${oe.date ? ' · ' + oe.date : ''}</div>
       </div>
-      <span class="text-[10px] text-zinc-600">daily</span>
+      <div class="border ${flow.border} ${flow.bg} px-2 py-0.5">
+        <span class="text-[9px] uppercase tracking-wider ${flow.c}">${flow.label}</span>
+      </div>
     </div>
 
     <div class="grid grid-cols-2 gap-3 mb-3">
-      <div class="border border-zinc-800 ${nvt.bg || 'bg-zinc-950/40'} p-3">
-        <div class="flex items-center justify-between mb-2">
-          <span class="text-[10px] uppercase tracking-wider text-zinc-500">NVT Signal (90d)</span>
-          <span class="text-[9px] ${nvt.c}">${nvt.icon || ''} ${nvt.label}</span>
+      <div class="border border-zinc-800 bg-zinc-950/40 p-3">
+        <div class="text-[10px] uppercase tracking-wider text-zinc-500 mb-2">Exchange Net Flow</div>
+        <div class="text-xl tabular-nums ${oe.netFlowM != null ? (oe.netFlowM < 0 ? 'text-emerald-400' : 'text-red-400') : 'text-zinc-400'}">
+          ${oe.netFlowM != null ? (oe.netFlowM >= 0 ? '+' : '') + fmtM(oe.netFlowM) : '—'} <span class="text-xs text-zinc-600">USD</span>
         </div>
-        <div class="text-2xl tabular-nums text-zinc-100">${oe.nvt != null ? oe.nvt.toFixed(1) : '—'}</div>
-        <div class="text-[9px] text-zinc-600 mt-1">{'<'}45 undervalued · {'>'}90 fair · {'>'}150 bubble</div>
+        <div class="text-[9px] text-zinc-600 mt-1">negatif = keluar exchange = akumulasi</div>
+        <div class="text-[9px] text-zinc-600">in: $${fmtM(oe.flowInExUsd != null ? oe.flowInExUsd/1e6 : null)} · out: $${fmtM(oe.flowOutExUsd != null ? oe.flowOutExUsd/1e6 : null)}</div>
       </div>
 
       <div class="border border-zinc-800 bg-zinc-950/40 p-3">
         <div class="flex items-center justify-between mb-2">
-          <span class="text-[10px] uppercase tracking-wider text-zinc-500">SOPR</span>
-          <span class="text-[9px] ${sopr.c}">${sopr.label}</span>
+          <span class="text-[10px] uppercase tracking-wider text-zinc-500">Active Addresses</span>
+          ${oe.adrTrend ? `<span class="text-[9px] ${adr.c}">${adr.label}</span>` : ''}
         </div>
-        <div class="text-2xl tabular-nums text-zinc-100">${oe.sopr != null ? oe.sopr.toFixed(4) : '—'}</div>
-        <div class="text-[9px] text-zinc-600 mt-1">{'>'}1 holder jual untung · {'<'}1 jual rugi</div>
+        <div class="text-xl tabular-nums text-zinc-100">${fmtK(oe.activeAddresses)}</div>
+        <div class="text-[9px] text-zinc-600 mt-1">${adr.hint || 'alamat aktif hari ini'}</div>
       </div>
     </div>
 
     <div class="text-[10px] text-zinc-500 sans border-t border-zinc-800/60 pt-2">
-      ${oe.soprSignal ? `<span class="${sopr.c}">${sopr.hint}</span>` : 'Data NVT & SOPR dari CoinMetrics Community (gratis, update harian)'}
+      <span class="${flow.c}">${flow.hint}</span>
     </div>
   </div>`;
 }
@@ -3203,7 +3220,7 @@ function viewSourceHealth(snap) {
     <div class="px-4 pb-3 space-y-2">
       <div class="flex flex-wrap gap-1">${ok.map(h => chip(h, 'border-emerald-500/30 text-emerald-400/80')).join('')}</div>
       ${dead.length ? `<div class="flex flex-wrap gap-1 items-center"><span class="text-[9px] text-red-400/80 uppercase mr-1">null/mati:</span>${dead.map(h => chip(h, 'border-red-500/40 text-red-400')).join('')}</div>` : ''}
-      ${needKey.length ? `<div class="flex flex-wrap gap-1 items-center"><span class="text-[9px] text-zinc-500 uppercase mr-1">butuh free key (Settings):</span>${needKey.map(h => chip(h, 'border-zinc-700 text-zinc-500')).join('')}</div>` : ''}
+      ${needKey.length ? `<div class="flex flex-wrap gap-1 items-center"><button onclick="window._app.openSettingsDataKeys()" class="text-[9px] text-blue-400/80 hover:text-blue-300 uppercase tracking-wider mr-1 underline underline-offset-2">butuh free key → Settings</button>${needKey.map(h => chip(h, 'border-zinc-700 text-zinc-500')).join('')}</div>` : ''}
       <div class="text-[10px] text-zinc-600 sans">Sumber yang terus-menerus "mati" berarti endpoint berubah/diblokir — laporkan/perbaiki, jangan dibiarkan senyap.</div>
     </div>
   </details>`;
@@ -3645,6 +3662,7 @@ window._app = {
   loadAnalysis,
   cancelAnalysis,
   toggleSettings,
+  openSettingsDataKeys,
   saveApiKey,
   clearApiKey,
   toggleShowKey,
